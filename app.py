@@ -93,9 +93,7 @@ with st.sidebar:
     st.markdown("---")
     
     # GESTION CLÉ API (Compatible Local & Render)
-    # 1. On cherche dans l'environnement (Render)
     api_key = os.environ.get("GOOGLE_API_KEY")
-    # 2. Sinon on demande à l'utilisateur (Local)
     if not api_key:
         api_key = st.text_input("🔑 Clé API Google Gemini", type="password", help="Obligatoire pour l'analyse")
 
@@ -104,31 +102,52 @@ with st.sidebar:
     
     st.success("""
     **Moteurs Activés :**
+    ✅ Anti-Blocking (Nouveau)
     ✅ Analyse 9 Points
     ✅ PsychoEngine™
-    ✅ Anti-Hallucination
     ✅ Trieur de Coupons
     """)
     st.markdown("---")
-    st.info("Développé pour les parieurs pro.")
+    st.info("Système Anti-Bot actif pour BeSoccer.")
 
 # --- 4. FONCTIONS DU NOYAU ---
 
 def get_besoccer_data(url):
-    """Scrape le contenu BeSoccer proprement."""
-    headers = {'User-Agent': 'Mozilla/5.0'}
+    """
+    Scrape le contenu BeSoccer en se faisant passer pour un vrai navigateur (Chrome).
+    CORRIGE L'ERREUR 403 / "Impossible de lire le lien"
+    """
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Referer': 'https://www.google.com/',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1'
+    }
+    
     try:
-        response = requests.get(url, headers=headers, timeout=10)
+        session = requests.Session()
+        response = session.get(url, headers=headers, timeout=15, allow_redirects=True)
+        
         if response.status_code == 200:
             soup = BeautifulSoup(response.content, 'html.parser')
+            
             # Suppression du bruit
-            for tag in soup(["script", "style", "nav", "footer", "iframe", "svg", "header"]):
+            for tag in soup(["script", "style", "nav", "footer", "iframe", "svg", "header", "aside"]):
                 tag.extract()
+            
             text = ' '.join(soup.get_text(separator=' ').split())
             title = soup.find('title').text if soup.find('title') else "Match Inconnu"
-            # On garde 30k caractères pour avoir le contexte complet
-            return {"title": title, "content": text[:30000]}
-        return None
+            
+            # Vérification anti-vide
+            if len(text) < 500:
+                return None
+                
+            return {"title": title, "content": text[:40000]}
+        else:
+            return None
+            
     except Exception as e:
         return None
 
@@ -192,7 +211,7 @@ st.markdown("Collez vos liens **BeSoccer** ci-dessous pour générer l'analyse 9
 # Zone de saisie
 urls_input = st.text_area("🔗 Liens des matchs (Un par ligne)", height=150, placeholder="https://fr.besoccer.com/match/...\nhttps://fr.besoccer.com/match/...")
 
-# Gestion de l'état (pour ne pas perdre les résultats si on clique ailleurs)
+# Gestion de l'état
 if "results" not in st.session_state:
     st.session_state.results = []
 
@@ -219,7 +238,7 @@ if st.button("LANCER L'ANALYSE COMPLÈTE 🚀"):
         for i, url in enumerate(urls):
             status_text.markdown(f"**🧠 Analyse en cours : Match {i+1}/{len(urls)}...**")
             
-            # 1. Scraping
+            # 1. Scraping (Robuste)
             data = get_besoccer_data(url)
             
             if data:
@@ -228,21 +247,19 @@ if st.button("LANCER L'ANALYSE COMPLÈTE 🚀"):
                     response = model.generate_content(build_ultimate_prompt(data))
                     full_text = response.text
                     
-                    # 3. Extraction JSON (Données Structurées)
+                    # 3. Extraction JSON
                     json_data = {}
-                    # Regex pour trouver le JSON entre accolades, même si l'IA parle avant/après
                     json_match = re.search(r'\{.*\}', full_text, re.DOTALL)
                     if json_match:
-                        clean_json = re.sub(r'//.*', '', json_match.group(0)) # Nettoyage commentaires
+                        clean_json = re.sub(r'//.*', '', json_match.group(0))
                         try:
                             json_data = json.loads(clean_json)
                         except:
                             json_data = {"match": data['title'], "pari_principal": "Erreur format", "categorie": "FUN"}
                         
-                        # Sécurité titre
                         if "match" not in json_data: json_data["match"] = data["title"]
                     
-                    # 4. Extraction Texte (Analyse Détaillée sans le JSON)
+                    # 4. Extraction Texte
                     clean_analysis_text = re.sub(r'```json.*```', '', full_text, flags=re.DOTALL)
                     
                     # 5. Sauvegarde
@@ -253,15 +270,15 @@ if st.button("LANCER L'ANALYSE COMPLÈTE 🚀"):
                     })
                     
                 except Exception as e:
-                    st.error(f"Erreur sur le lien {i+1}: {e}")
+                    st.error(f"Erreur IA sur le lien {i+1}: {e}")
             else:
-                st.error(f"Impossible de lire le lien : {url}")
+                st.error(f"Impossible de lire le lien (Bloqué ou invalide) : {url}")
             
             # Mise à jour progression
             progress_bar.progress((i + 1) / len(urls))
         
         status_text.empty()
-        st.balloons() # Petite animation de succès
+        st.balloons()
         st.success("✅ Analyse terminée ! Découvrez vos coupons ci-dessous.")
 
 # --- 6. AFFICHAGE DES RÉSULTATS (DASHBOARD) ---
