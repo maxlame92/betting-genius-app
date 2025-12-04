@@ -7,363 +7,340 @@ import re
 import os
 import time
 
-# --- 1. CONFIGURATION DE LA PAGE ---
+# --- 1. CONFIGURATION ---
 st.set_page_config(
-    page_title="BettingGenius Ultimate - AI & PsychoEngine",
-    page_icon="🧠",
+    page_title="BettingGenius Pro",
+    page_icon="⚽",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# --- 2. DESIGN CSS "PREMIUM SAAS" ---
+# --- 2. CSS STABILISÉ (Fix pour le bug d'affichage) ---
 st.markdown("""
 <style>
-    /* FOND GLOBAL */
-    .stApp { background-color: #0b0f19; color: #e0e6ed; }
+    /* Fond */
+    .stApp { background-color: #0F172A; color: #E2E8F0; }
     
-    /* TYPOGRAPHIE */
-    h1, h2, h3 { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; }
-    h1 { color: #ffffff; font-weight: 800; }
-    h3 { color: #10B981; } 
-
-    /* STYLE DES CARTES "COUPONS" */
+    /* Typographie */
+    h1, h2, h3 { font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+    h1 { color: #F8FAFC; text-transform: uppercase; letter-spacing: 1px; }
+    
+    /* CARTES COUPONS (Design Ticket 1xBet style) */
     .coupon-card {
-        background: linear-gradient(145deg, #161b26, #11151e);
-        padding: 20px;
+        background-color: #1E293B;
         border-radius: 12px;
-        border: 1px solid #2d3748;
+        padding: 20px;
         margin-bottom: 20px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-        transition: transform 0.2s ease-in-out;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        border: 1px solid #334155;
+        position: relative;
+        overflow: hidden;
     }
-    .coupon-card:hover { transform: translateY(-3px); box-shadow: 0 10px 20px rgba(0,0,0,0.5); }
+    
+    /* Bordures colorées */
+    .safe-border { border-left: 5px solid #22C55E; }
+    .psycho-border { border-left: 5px solid #A855F7; }
+    .fun-border { border-left: 5px solid #F59E0B; }
 
-    /* BORDURES CATÉGORIES */
-    .border-safe { border-left: 6px solid #10B981; }   /* Vert */
-    .border-psycho { border-left: 6px solid #8B5CF6; } /* Violet */
-    .border-fun { border-left: 6px solid #F59E0B; }    /* Orange */
-
-    /* BADGES */
-    .badge {
-        display: inline-block;
-        padding: 4px 10px;
-        border-radius: 6px;
+    /* En-tête du ticket */
+    .ticket-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 15px;
+        border-bottom: 1px solid #334155;
+        padding-bottom: 10px;
+    }
+    .ticket-match { font-size: 1.1rem; font-weight: 700; color: #fff; }
+    
+    /* Badges */
+    .ticket-badge {
         font-size: 0.75rem;
         font-weight: 800;
+        padding: 4px 8px;
+        border-radius: 4px;
         text-transform: uppercase;
-        margin-right: 5px;
     }
-    .badge-conf { background-color: #064e3b; color: #6ee7b7; border: 1px solid #10B981; }
-    .badge-psy { background-color: #4c1d95; color: #c4b5fd; border: 1px solid #8B5CF6; }
+    .bg-green { background-color: #064E3B; color: #4ADE80; border: 1px solid #22C55E; }
+    .bg-purple { background-color: #581C87; color: #D8B4FE; border: 1px solid #A855F7; }
     
-    /* STATS GRID (Le design "Ticket") */
-    .stats-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 10px;
-        margin: 15px 0;
-    }
-    .stat-box {
+    /* Prédiction Principale */
+    .main-bet {
+        font-size: 1.4rem;
+        font-weight: 800;
+        color: #22C55E;
+        margin: 10px 0;
+        text-align: center;
         background: #111827;
         padding: 10px;
         border-radius: 8px;
-        text-align: center;
-        border: 1px solid #374151;
+        border: 1px dashed #374151;
     }
-    .stat-label { color: #9CA3AF; font-size: 0.75em; text-transform: uppercase; letter-spacing: 1px; }
-    .stat-value { color: #fff; font-weight: bold; font-size: 1.1em; }
 
-    /* BOUTON D'ACTION */
+    /* Grille Stats */
+    .stats-row {
+        display: flex;
+        gap: 10px;
+        margin-top: 15px;
+    }
+    .stat-item {
+        flex: 1;
+        background: #0F172A;
+        padding: 8px;
+        border-radius: 6px;
+        text-align: center;
+        border: 1px solid #334155;
+    }
+    .stat-label { font-size: 0.7em; color: #94A3B8; letter-spacing: 0.5px; }
+    .stat-val { font-size: 1.1em; font-weight: bold; color: #F8FAFC; }
+
+    /* Jauge de Confiance (Barre visuelle) */
+    .progress-bg {
+        background: #334155;
+        height: 6px;
+        border-radius: 3px;
+        margin-top: 5px;
+        width: 100%;
+    }
+    .progress-fill {
+        height: 100%;
+        border-radius: 3px;
+        background: linear-gradient(90deg, #22C55E, #4ADE80);
+    }
+
+    /* Analyse texte */
+    .analysis-text {
+        margin-top: 15px;
+        font-style: italic;
+        color: #CBD5E1;
+        font-size: 0.9em;
+        line-height: 1.5;
+        background: #1e293b; 
+        padding-top: 10px;
+    }
+
+    /* Bouton */
     .stButton>button {
         width: 100%;
-        background: linear-gradient(90deg, #3B82F6 0%, #2563EB 100%);
-        color: white; border: none; padding: 16px; font-size: 18px; font-weight: bold; border-radius: 10px;
-        box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);
-        transition: 0.3s;
+        background: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%);
+        border: none;
+        padding: 15px;
+        font-weight: bold;
+        color: white;
+        border-radius: 8px;
+        font-size: 1.1rem;
+        transition: transform 0.1s;
     }
-    .stButton>button:hover { background: linear-gradient(90deg, #2563EB 0%, #1D4ED8 100%); }
-    
-    /* ZONE ANALYSE TEXTE COMPLETE */
-    .full-analysis-box {
-        background-color: #1f2937;
-        padding: 25px;
-        border-radius: 10px;
-        border-left: 4px solid #3B82F6;
-        color: #d1d5db;
-        line-height: 1.6;
-        font-size: 0.95em;
-    }
+    .stButton>button:hover { transform: scale(1.01); }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. BARRE LATÉRALE (PARAMÈTRES) ---
+# --- 3. SIDEBAR ---
 with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/2586/2586885.png", width=70)
+    st.image("https://cdn-icons-png.flaticon.com/512/2586/2586885.png", width=60)
     st.title("BettingGenius")
-    st.markdown("**Ultimate Edition (V6)**")
-    st.markdown("---")
+    st.markdown("**V7 - Stable Edition**")
     
-    # Gestion Clé API (Auto Render ou Manuelle)
+    # Clé API
     api_key = os.environ.get("GOOGLE_API_KEY")
     if not api_key:
-        api_key = st.text_input("🔑 Clé API Google Gemini", type="password")
+        api_key = st.text_input("🔑 Clé API Gemini", type="password")
 
-    st.markdown("### 🧬 Cerveau IA")
-    # Liste complète des modèles
-    model_choice = st.selectbox(
-        "Version du modèle :", 
-        [
-            "gemini-1.5-flash",        # Le plus stable
-            "gemini-2.0-flash-exp",    # Rapide
-            "gemini-2.5-flash",        # Nouvelle génération
-            "gemini-2.5-pro",          # Haute intelligence
-            "gemini-1.5-pro-latest",   # Pro stable
-            "Autre (Manuel)"
-        ],
-        index=0
-    )
-    
-    if model_choice == "Autre (Manuel)":
-        model_version = st.text_input("Nom technique", "gemini-1.5-flash")
+    # Choix Modèle
+    model_choice = st.selectbox("Modèle IA :", ["gemini-1.5-flash", "gemini-2.0-flash-exp", "gemini-2.5-flash", "Autre"])
+    if model_choice == "Autre":
+        model_version = st.text_input("Nom technique", "gemini-1.5-pro")
     else:
         model_version = model_choice
-    
-    st.success(f"Modèle actif : **{model_version}**")
-    st.info("✅ Anti-Bot BeSoccer Actif\n✅ PsychoEngine™ Actif\n✅ Design Ticket Actif")
+        
+    st.success("Système prêt.")
 
-# --- 4. FONCTION SCRAPING (ANTI-BLOCAGE) ---
+# --- 4. SCRAPING ---
 def get_besoccer_data(url):
-    """
-    Récupère les données en contournant les erreurs 403.
-    Force l'URL en français pour une meilleure analyse.
-    """
-    url = url.replace("www.besoccer.com", "fr.besoccer.com")
-    url = url.replace("/preview", "/avant-match")
-    url = url.replace("/analysis", "/analyse")
-    
+    url = url.replace("www.besoccer.com", "fr.besoccer.com").replace("/preview", "/avant-match").replace("/analysis", "/analyse")
     try:
-        # Configuration du CloudScraper (Imite Chrome sur Windows)
         scraper = cloudscraper.create_scraper(browser={'browser': 'chrome','platform': 'windows','desktop': True})
         response = scraper.get(url)
-        
         if response.status_code == 200:
             soup = BeautifulSoup(response.content, 'html.parser')
-            # Nettoyage agressif du HTML inutile
-            for tag in soup(["script", "style", "nav", "footer", "iframe", "svg", "header", "aside", "form"]):
-                tag.extract()
-            
+            for tag in soup(["script", "style", "nav", "footer", "iframe", "svg", "header", "form"]): tag.extract()
             text = ' '.join(soup.get_text(separator=' ').split())
-            title = soup.find('title').text if soup.find('title') else "Match sans titre"
-            
-            # Vérification anti-page vide
+            title = soup.find('title').text if soup.find('title') else "Match"
             if len(text) < 500: return None
-            
-            return {"title": title, "content": text[:45000]} # Max context
-        else:
-            return None
-    except:
+            return {"title": title, "content": text[:40000]}
         return None
+    except: return None
 
-def build_ultimate_prompt(match_data):
-    """
-    Le Prompt Maître : 9 Points + Psycho + JSON Ticket.
-    """
+def build_prompt(match_data):
     return f"""
-    Tu es "BettingGenius", l'IA experte mondiale en paris sportifs.
-    
-    ANALYSE LE MATCH : {match_data['title']}
-    DONNÉES : "{match_data['content']}"
+    Tu es "BettingGenius". Analyse : {match_data['title']}
+    Données : "{match_data['content']}"
 
-    --- PARTIE 1 : ANALYSE TECHNIQUE & PSYCHOLOGIQUE (TEXTE) ---
-    Rédige une analyse détaillée. Si info manquante, dis "❌ Non dispo".
-    1. **🏆 Prédiction** : Forme + Dynamique Mentale (Confiance/Crise).
-    2. **🚩 Corners** : Stratégie (Ailes/Axe).
+    --- 1. ANALYSE (9 POINTS) ---
+    Si info absente, écris "❌ Non dispo".
+    1. **🏆 Prédiction** (Forme/Mental).
+    2. **🚩 Corners**.
     3. **🔢 Score exact**.
-    4. **⚽ Total Buts** (xG, Momentum).
-    5. **⏱️ Périodes** (Buts tardifs ?).
-    6. **🏥 Absences** (Impact réel).
-    7. **🏟️ Conditions** (Météo/Terrain).
-    8. **⚠️ Facteurs X** (Arbitrage/Pression).
-    9. **🎲 Monte Carlo** (Probabilités).
+    4. **⚽ Buts**.
+    5. **⏱️ Périodes**.
+    6. **🏥 Absences**.
+    7. **🏟️ Conditions**.
+    8. **⚠️ Facteurs X**.
+    9. **🎲 Monte Carlo**.
 
-    --- PARTIE 2 : CLASSIFICATION ET COUPON (JSON STRICT) ---
-    Génère ce JSON à la fin pour créer le ticket de pari.
-    
-    Catégories : 
-    - "SAFE" (Confiance > 80%, Favori solide).
-    - "PSYCHO" (Enjeu vital : Maintien, Titre, Derby).
-    - "FUN" (Risqué ou Indécis).
-
+    --- 2. COUPON JSON ---
+    Catégories: "SAFE" (>80%), "PSYCHO" (Enjeu), "FUN".
     ```json
     {{
         "match": "{match_data['title']}",
-        "pari_principal": "Ex: Victoire Real Madrid",
-        "score_exact": "Ex: 3-1",
+        "pari_principal": "Ex: Victoire Real",
+        "score_exact": "Ex: 2-1",
         "corners": "Ex: +9.5",
-        "total_buts": "Ex: +3.5",
+        "total_buts": "Ex: +2.5",
         "confiance": 85,
         "categorie": "SAFE", 
-        "facteur_psycho": "Ex: COURSE AU TITRE / MAINTIEN / FORME OLYMPIQUE",
-        "analyse_courte": "Une phrase d'expert pour résumer."
+        "facteur_psycho": "Ex: TITRE / MAINTIEN",
+        "analyse_courte": "Résumé court."
     }}
     ```
     """
 
-# --- 5. INTERFACE PRINCIPALE ---
+# --- 5. INTERFACE ---
+st.title("🧠 BettingGenius Pro")
+st.markdown("Analyseur IA de paris sportifs. Collez vos liens ci-dessous.")
 
-st.title("🧠 BettingGenius Ultimate")
-st.markdown("Collez vos liens **BeSoccer** ci-dessous (Anglais ou Français acceptés).")
-
-urls_input = st.text_area("🔗 Liens des matchs", height=120)
+urls_input = st.text_area("🔗 Liens BeSoccer", height=100)
 
 if "results" not in st.session_state: st.session_state.results = []
 
-# --- LOGIQUE D'EXÉCUTION ---
-if st.button("LANCER L'ANALYSE COMPLÈTE 🚀"):
+if st.button("LANCER L'ANALYSE 🚀"):
     if not api_key or not urls_input:
-        st.warning("⛔ Clé API ou liens manquants.")
+        st.warning("⛔ Manque Clé API ou Liens")
     else:
         urls = [url.strip() for url in urls_input.split('\n') if url.strip()]
         st.session_state.results = []
-        progress_bar = st.progress(0)
-        status_text = st.empty()
+        progress = st.progress(0)
+        status = st.empty()
         
         genai.configure(api_key=api_key)
-        
-        # Test Modèle
-        try:
-            model = genai.GenerativeModel(model_version)
-        except:
-            st.error("❌ Modèle incorrect. Changez-le dans la barre latérale.")
-            st.stop()
+        try: model = genai.GenerativeModel(model_version)
+        except: st.error("Modèle invalide"); st.stop()
         
         for i, url in enumerate(urls):
-            status_text.markdown(f"**⏳ Match {i+1}/{len(urls)} : Analyse en cours...**")
-            
-            # 1. Pause Anti-Ban BeSoccer
-            time.sleep(2)
-            
-            # 2. Scraping
+            status.text(f"Analyse {i+1}/{len(urls)}...")
+            time.sleep(1.5) # Pause anti-ban
             data = get_besoccer_data(url)
             
             if data:
-                # 3. Boucle de Réessai (Retry Logic) pour l'IA
-                max_retries = 2
-                for attempt in range(max_retries):
+                # Retry logic
+                for attempt in range(2):
                     try:
-                        response = model.generate_content(build_ultimate_prompt(data))
-                        full_text = response.text
+                        res = model.generate_content(build_prompt(data))
+                        txt = res.text
                         
-                        # Extraction JSON
-                        json_match = re.search(r'\{.*\}', full_text, re.DOTALL)
-                        json_data = {}
-                        if json_match:
-                            clean_json = re.sub(r'//.*', '', json_match.group(0))
-                            try: json_data = json.loads(clean_json)
-                            except: json_data = {"match": data['title'], "pari_principal": "Erreur", "categorie": "FUN"}
-                            if "match" not in json_data: json_data["match"] = data["title"]
+                        # JSON Parse
+                        j_match = re.search(r'\{.*\}', txt, re.DOTALL)
+                        j_data = {}
+                        if j_match:
+                            clean = re.sub(r'//.*', '', j_match.group(0))
+                            try: j_data = json.loads(clean)
+                            except: j_data = {"match": data['title'], "pari_principal": "Erreur", "categorie": "FUN"}
+                            if "match" not in j_data: j_data["match"] = data["title"]
                         
-                        # Extraction Texte
-                        clean_analysis = re.sub(r'```json.*```', '', full_text, flags=re.DOTALL)
-                        
-                        st.session_state.results.append({
-                            "json": json_data,
-                            "analysis_text": clean_analysis,
-                            "title": data['title']
-                        })
-                        break # Succès, on sort du retry
-                        
+                        clean_txt = re.sub(r'```json.*```', '', txt, flags=re.DOTALL)
+                        st.session_state.results.append({"json": j_data, "text": clean_txt, "title": data['title']})
+                        break
                     except Exception as e:
-                        err = str(e)
-                        if "429" in err: # Quota
-                            status_text.warning(f"⚠️ Quota atteint. Pause de 20s...")
-                            time.sleep(20)
-                        elif "404" in err: # Modèle pas trouvé
-                            st.error(f"❌ Le modèle {model_version} n'est pas disponible. Utilisez 'gemini-1.5-flash'.")
-                            break
-                        else:
-                            st.error(f"Erreur IA : {err}")
-                            break
-                
-                # Pause post-traitement
-                time.sleep(1)
-            else:
-                st.error(f"Lien bloqué ou vide : {url}")
+                        if "429" in str(e): time.sleep(20)
+                        else: break
             
-            progress_bar.progress((i + 1) / len(urls))
+            progress.progress((i+1)/len(urls))
         
-        status_text.empty()
-        st.success("✅ Analyse terminée !")
+        status.empty()
+        st.success("✅ Terminé !")
 
-# --- 6. AFFICHAGE DES RÉSULTATS (TICKETS & DÉTAILS) ---
+# --- 6. AFFICHAGE (NOUVEAU DESIGN SANS ERREUR) ---
+
+# Fonction pour afficher une carte proprement sans casser le DOM
+def render_ticket(item, border_class, badge_class):
+    j = item['json']
+    confiance = j.get('confiance', 50)
+    
+    # Construction du HTML propre
+    html_content = f"""
+    <div class="coupon-card {border_class}">
+        <!-- EN-TÊTE -->
+        <div class="ticket-header">
+            <div style="flex-grow:1;">
+                <div class="ticket-match">{j.get('match')}</div>
+                <div style="margin-top:5px;">
+                    <span class="ticket-badge {badge_class}">{j.get('facteur_psycho', 'ANALYSE')}</span>
+                </div>
+            </div>
+            <div style="text-align:right; min-width:60px;">
+                <div style="font-size:0.8em; color:#94A3B8;">CONFIANCE</div>
+                <div style="font-weight:bold; color:#fff;">{confiance}%</div>
+                <div class="progress-bg">
+                    <div class="progress-fill" style="width: {confiance}%;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- PARI PRINCIPAL -->
+        <div class="main-bet">
+            🏆 {j.get('pari_principal')}
+        </div>
+
+        <!-- STATS -->
+        <div class="stats-row">
+            <div class="stat-item">
+                <div class="stat-label">SCORE</div>
+                <div class="stat-val">{j.get('score_exact', '-')}</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-label">BUTS</div>
+                <div class="stat-val">{j.get('total_buts', '-')}</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-label">CORNERS</div>
+                <div class="stat-val">{j.get('corners', '-')}</div>
+            </div>
+        </div>
+
+        <!-- TEXTE -->
+        <div class="analysis-text">
+            "{j.get('analyse_courte')}"
+        </div>
+    </div>
+    """
+    st.markdown(html_content, unsafe_allow_html=True)
 
 if st.session_state.results:
     st.markdown("---")
     
-    # Tri
     safes = [r for r in st.session_state.results if r['json'].get('categorie') == 'SAFE']
     psychos = [r for r in st.session_state.results if r['json'].get('categorie') == 'PSYCHO']
     funs = [r for r in st.session_state.results if r['json'].get('categorie') == 'FUN']
 
-    st.subheader("🎟️ VOS COUPONS")
-    
-    # Onglets
-    tab_safe, tab_psycho, tab_fun = st.tabs(["🛡️ BLINDÉ", "🧠 TACTIQUE", "💣 FUN"])
+    t1, t2, t3 = st.tabs(["🛡️ BLINDÉ", "🧠 TACTIQUE", "💣 FUN"])
 
-    # FONCTION D'AFFICHAGE DU TICKET
-    def display_ticket(item, border_class, badge_class):
-        j = item['json']
-        st.markdown(f"""
-        <div class="coupon-card {border_class}">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-                <div class="match-title" style="margin:0;">{j.get('match')}</div>
-                <span class="badge badge-conf">{j.get('confiance')}%</span>
-            </div>
-            
-            <div>
-                <span class="badge {badge_class}">{j.get('facteur_psycho', 'ANALYSE')}</span>
-            </div>
-
-            <div class="prediction-main" style="margin: 15px 0; font-size:1.3em;">
-                🏆 {j.get('pari_principal')}
-            </div>
-
-            <div class="stats-grid">
-                <div class="stat-box">
-                    <div class="stat-label">SCORE EXACT</div>
-                    <div class="stat-value">{j.get('score_exact', '-')}</div>
-                </div>
-                <div class="stat-box">
-                    <div class="stat-label">TOTAL BUTS</div>
-                    <div class="stat-value">{j.get('total_buts', '-')}</div>
-                </div>
-            </div>
-            
-            <div style="margin-top:5px; font-size:0.9em; color:#9CA3AF;">
-                🚩 Corners: <span style="color:#fff;">{j.get('corners', '-')}</span>
-            </div>
-
-            <div class="analysis-short">"{j.get('analyse_courte')}"</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with tab_safe:
+    with t1:
         if safes:
-            for item in safes: display_ticket(item, "border-safe", "badge-conf")
-        else: st.info("Aucun match 100% sûr détecté.")
+            for item in safes: render_ticket(item, "safe-border", "bg-green")
+        else: st.info("Aucun match 100% sûr.")
 
-    with tab_psycho:
+    with t2:
         if psychos:
-            for item in psychos: display_ticket(item, "border-psycho", "badge-psy")
-        else: st.info("Pas d'enjeu critique détecté.")
+            for item in psychos: render_ticket(item, "psycho-border", "bg-purple")
+        else: st.info("Aucun match à enjeu critique.")
 
-    with tab_fun:
+    with t3:
         if funs:
-            for item in funs: display_ticket(item, "border-fun", "badge-psy")
+            for item in funs: render_ticket(item, "fun-border", "bg-purple")
         else: st.write("Rien ici.")
 
     st.markdown("---")
-    st.subheader("📝 ANALYSES DÉTAILLÉES (9 POINTS)")
+    st.subheader("📝 DÉTAILS COMPLETS")
     for item in st.session_state.results:
-        with st.expander(f"🔎 {item['title']}", expanded=False):
-            st.markdown(f"""<div class="full-analysis-box">{item['analysis_text']}</div>""", unsafe_allow_html=True)
+        with st.expander(f"🔎 {item['title']}"):
+            st.markdown(item['text'])
