@@ -10,7 +10,7 @@ from datetime import date
 # 1. CONFIGURATION INITIALE
 # ==========================================
 st.set_page_config(
-    page_title="BettingGenius API - V9",
+    page_title="BettingGenius Auto",
     page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -21,16 +21,17 @@ st.set_page_config(
 # ==========================================
 st.markdown("""
 <style>
+    /* BASE */
     .stApp { background-color: #0F172A; color: #E2E8F0; }
     h1 { color: #F8FAFC; text-transform: uppercase; font-weight: 800; }
     
-    /* BOUTON CHERCHER */
+    /* BOUTONS */
     .stButton>button {
         background: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%);
-        color: white; border: none; font-weight: bold; border-radius: 8px; width: 100%; height: 50px;
+        color: white; border: none; font-weight: bold; border-radius: 8px; width: 100%;
     }
     
-    /* STYLE DES TICKETS RÉSULTATS */
+    /* STYLE TICKET RESULTAT */
     .coupon-container {
         background-color: #1E293B;
         border-radius: 12px;
@@ -43,78 +44,84 @@ st.markdown("""
     .border-psycho { border-left: 6px solid #A855F7; }
     .border-fun { border-left: 6px solid #F59E0B; }
     
-    /* BADGES */
-    .badge { padding: 4px 8px; border-radius: 4px; font-weight: 800; text-transform: uppercase; font-size: 0.75rem; }
-    .badge-psy { background-color: #581C87; color: #D8B4FE; }
-    
-    /* LISTE DES MATCHS */
+    /* MATCH BOX */
     .match-box {
         background: #1E293B; padding: 15px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid #3B82F6;
         display: flex; justify-content: space-between; align-items: center;
     }
     .match-time { font-weight: bold; color: #94A3B8; margin-right: 15px; }
     .match-teams { font-size: 1.1em; font-weight: bold; color: white; }
+    
+    /* JAUGE DE CONFIANCE */
+    .progress-track { background: #334155; height: 6px; border-radius: 3px; margin-top: 5px; width: 100%; }
+    .progress-bar { height: 100%; border-radius: 3px; background: linear-gradient(90deg, #22C55E, #4ADE80); }
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 3. SIDEBAR
+# 3. SIDEBAR (JUSTE GEMINI MAINTENANT)
 # ==========================================
 with st.sidebar:
     st.title("⚡ BettingGenius")
-    st.caption("API Edition V9")
+    st.caption("Version API Intégrée")
     st.markdown("---")
     
+    # On demande seulement la clé Google Gemini car l'autre est déjà dans le code
     gemini_key = os.environ.get("GOOGLE_API_KEY")
     if not gemini_key:
         gemini_key = st.text_input("🔑 Clé Gemini AI", type="password")
     
-    rapid_key = st.text_input("🔑 Clé API-Football", type="password")
+    st.success("✅ Clé API-Football intégrée")
+    st.info("Le système est prêt à l'emploi.")
     
-    st.markdown("---")
     model_version = st.selectbox("Modèle IA", ["gemini-1.5-flash", "gemini-2.0-flash-exp"])
 
 # ==========================================
-# 4. LOGIQUE API AUTOMATIQUE
+# 4. LOGIQUE API (AVEC TA CLÉ INTÉGRÉE)
 # ==========================================
 
-def get_headers(api_key):
+# --- TA CLÉ EST ICI ---
+RAPID_API_KEY = "f3ab5bacccmshb976c3672642272p11e8e8jsn6fd372d8e64b"
+RAPID_API_HOST = "api-football-v1.p.rapidapi.com"
+
+def get_headers():
     return {
-        "X-RapidAPI-Key": api_key,
-        "X-RapidAPI-Host": "api-football-v1.p.rapidapi.com"
+        "X-RapidAPI-Key": RAPID_API_KEY,
+        "X-RapidAPI-Host": RAPID_API_HOST
     }
 
 def get_season(selected_date):
-    """
-    Calcule automatiquement la saison en fonction de la date.
-    Si on est en Aout-Decembre 2025 -> Saison 2025
-    Si on est en Janvier-Mai 2026 -> Saison 2025
-    """
+    """Calcule la saison foot (Ex: Déc 2024 = Saison 2024 / Jan 2025 = Saison 2024)"""
     year = selected_date.year
     month = selected_date.month
-    # Si on est au deuxième semestre (Juillet à Décembre), c'est la saison de l'année en cours
-    if month >= 7:
-        return year
-    # Si on est au premier semestre (Janvier à Juin), c'est la saison de l'année d'avant
-    else:
-        return year - 1
+    if month >= 7: return year
+    else: return year - 1
 
-def get_fixtures(api_key, league_id, date_obj):
+def get_fixtures(league_id, date_obj):
     url = "https://api-football-v1.p.rapidapi.com/v3/fixtures"
-    season = get_season(date_obj) # Calcul auto de la saison
+    season = get_season(date_obj)
     
     querystring = {"league": str(league_id), "season": str(season), "date": str(date_obj)}
     
     try:
-        response = requests.get(url, headers=get_headers(api_key), params=querystring)
-        return response.json().get('response', [])
-    except:
+        response = requests.get(url, headers=get_headers(), params=querystring)
+        data = response.json()
+        
+        # Gestion des erreurs API
+        if "errors" in data and data["errors"]:
+            # Souvent lié au quota ou permission
+            st.error(f"Erreur API : {data['errors']}")
+            return []
+            
+        return data.get('response', [])
+    except Exception as e:
+        st.error(f"Erreur connexion : {e}")
         return []
 
-def get_match_predictions(api_key, fixture_id):
+def get_match_predictions(fixture_id):
     url = "https://api-football-v1.p.rapidapi.com/v3/predictions"
     try:
-        response = requests.get(url, headers=get_headers(api_key), params={"fixture": str(fixture_id)})
+        response = requests.get(url, headers=get_headers(), params={"fixture": str(fixture_id)})
         data = response.json().get('response', [])
         return json.dumps(data[0], indent=2) if data else None
     except:
@@ -122,16 +129,16 @@ def get_match_predictions(api_key, fixture_id):
 
 def build_api_prompt(match_title, json_data):
     return f"""
-    Tu es "BettingGenius". Analyse : {match_title}
-    Données API (JSON) : {json_data}
+    Tu es "BettingGenius". Analyse le match : {match_title}
+    
+    DONNÉES TECHNIQUES API (JSON) :
+    {json_data}
     
     --- MISSION ---
-    1. Analyse Forme, H2H, Attaque/Défense.
-    2. Détecte le facteur Psycho (Domicile fort ? Série noire ?).
-    3. Génère le JSON final.
-
-    Catégories: "SAFE" (>75%), "PSYCHO" (Enjeu), "FUN".
-
+    1. Analyse les Stats, la Forme et les Probabilités de l'API.
+    2. Déduis un pronostic logique.
+    
+    --- FORMAT JSON FINAL ---
     ```json
     {{
         "match": "{match_title}",
@@ -141,26 +148,25 @@ def build_api_prompt(match_title, json_data):
         "total_buts": "Ex: +2.5",
         "confiance": 80,
         "categorie": "SAFE",
-        "facteur_psycho": "Ex: FORTERESSE A DOMICILE",
+        "facteur_psycho": "Ex: FORME DOMICILE",
         "analyse_courte": "Phrase courte."
     }}
     ```
     """
 
 # ==========================================
-# 5. INTERFACE
+# 5. INTERFACE PRINCIPALE
 # ==========================================
 
-st.title("⚡ BettingGenius - Tous Championnats")
+st.title("⚡ BettingGenius - Auto Mode")
 
-if not rapid_key or not gemini_key:
-    st.warning("⚠️ Entrez vos clés API à gauche pour activer le système.")
+if not gemini_key:
+    st.warning("⚠️ Veuillez entrer votre Clé Google Gemini à gauche.")
 else:
-    # --- SÉLECTEURS ---
+    # FILTRES
     c1, c2, c3 = st.columns([2, 1, 1])
     
     with c1:
-        # LISTE ÉLARGIE DES CHAMPIONNATS
         leagues = {
             "🏴󠁧󠁢󠁥󠁮󠁧󠁿 Premier League": 39,
             "🇪🇸 La Liga": 140,
@@ -168,36 +174,33 @@ else:
             "🇩🇪 Bundesliga": 78,
             "🇮🇹 Serie A": 135,
             "🇪🇺 Champions League": 2,
-            "🇪🇺 Europa League": 3,
             "🇵🇹 Liga Portugal": 94,
-            "🇳🇱 Eredivisie (Pays-Bas)": 88,
-            "🇹🇷 Süper Lig (Turquie)": 203,
-            "🇸🇦 Saudi Pro League": 307,
-            "🇧🇷 Brasileirão": 71,
-            "🌍 CAN (Afrique)": 29,
-            "🇺🇸 MLS (USA)": 253
+            "🇳🇱 Eredivisie": 88,
+            "🇹🇷 Süper Lig": 203,
+            "🇸🇦 Saudi Pro League": 307
         }
         league_choice = st.selectbox("Championnat", list(leagues.keys()))
         league_id = leagues[league_choice]
         
     with c2:
+        # Date par défaut = Aujourd'hui
         date_choice = st.date_input("Date du match", date.today())
         
     with c3:
-        st.write("") # Espace
+        st.write("") 
         st.write("") 
         search_btn = st.button("🔎 CHERCHER")
 
-    # --- LOGIQUE RECHERCHE ---
+    # LOGIQUE RECHERCHE
     if search_btn:
-        with st.spinner(f"Recherche des matchs en {league_choice} pour le {date_choice}..."):
-            matches = get_fixtures(rapid_key, league_id, date_choice)
+        with st.spinner(f"Recherche..."):
+            matches = get_fixtures(league_id, date_choice)
             st.session_state['matches'] = matches
-            st.session_state['analysis_result'] = None # Reset analyse
+            st.session_state['analysis_result'] = None
 
-    # --- LISTE DES RÉSULTATS ---
+    # RESULTATS LISTE
     if 'matches' in st.session_state and st.session_state['matches']:
-        st.markdown(f"### {len(st.session_state['matches'])} Matchs trouvés")
+        st.markdown(f"### {len(st.session_state['matches'])} Matchs le {date_choice}")
         
         for m in st.session_state['matches']:
             home = m['teams']['home']['name']
@@ -219,8 +222,8 @@ else:
             
             with col_b:
                 if st.button(f"Analyser 🧠", key=fid):
-                    with st.spinner("L'IA travaille..."):
-                        stats = get_match_predictions(rapid_key, fid)
+                    with st.spinner("Analyse IA en cours..."):
+                        stats = get_match_predictions(fid)
                         if stats:
                             genai.configure(api_key=gemini_key)
                             model = genai.GenerativeModel(model_version)
@@ -235,12 +238,12 @@ else:
                             except Exception as e:
                                 st.error(f"Erreur IA : {e}")
                         else:
-                            st.error("Données indisponibles pour ce match.")
+                            st.error("Stats indisponibles (Trop tôt ou Ligue mineure).")
                             
     elif 'matches' in st.session_state:
-        st.warning(f"🚫 Aucun match trouvé le {date_choice} pour ce championnat. Essayez une autre date (ex: le week-end).")
+        st.warning(f"🚫 Aucun match trouvé à cette date. Vérifiez que la date correspond bien à une journée de championnat.")
 
-    # --- AFFICHAGE TICKET ---
+    # AFFICHAGE TICKET
     if 'analysis_result' in st.session_state and st.session_state['analysis_result']:
         res = st.session_state['analysis_result']
         j = res['json']
@@ -253,10 +256,11 @@ else:
             <div style="display:flex; justify-content:space-between;">
                 <h3>{j.get('match')}</h3>
                 <div>
-                    <span class="badge badge-psy">{j.get('facteur_psycho')}</span>
+                    <span class="badge" style="background:#581C87; padding:5px; border-radius:4px;">{j.get('facteur_psycho')}</span>
                     <strong style="color:#4ADE80; font-size:1.2em;">{j.get('confiance')}%</strong>
                 </div>
             </div>
+            <div class="progress-track"><div class="progress-bar" style="width: {j.get('confiance')}%;"></div></div>
             
             <div style="text-align:center; margin:20px 0; background:#0F172A; padding:15px; border-radius:8px; border:1px dashed #334155;">
                 <div style="color:#22C55E; font-size:1.5em; font-weight:800;">🏆 {j.get('pari_principal')}</div>
