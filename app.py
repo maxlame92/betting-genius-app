@@ -1,60 +1,61 @@
 import streamlit as st
 import google.generativeai as genai
-import cloudscraper
-from bs4 import BeautifulSoup
+import requests
+import pandas as pd
 import json
 import re
 import os
 import time
+from datetime import date
 
 # ==========================================
 # 1. CONFIGURATION INITIALE
 # ==========================================
 st.set_page_config(
-    page_title="BettingGenius Ultimate V8",
-    page_icon="🧠",
+    page_title="BettingGenius API - Ultimate",
+    page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
 # ==========================================
-# 2. DESIGN CSS (STABLE & PREMIUM)
+# 2. DESIGN CSS "PREMIUM SAAS"
 # ==========================================
 st.markdown("""
 <style>
-    /* FOND ET COULEURS GLOBALES */
+    /* FOND ET COULEURS */
     .stApp { background-color: #0F172A; color: #E2E8F0; }
     
     /* TYPOGRAPHIE */
-    h1, h2, h3 { font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+    h1, h2, h3 { font-family: 'Segoe UI', sans-serif; }
     h1 { color: #F8FAFC; text-transform: uppercase; letter-spacing: 1px; font-weight: 800; }
     
-    /* STYLE DES TICKETS (COUPONS) */
+    /* STYLE DES TICKETS (RÉSULTATS) */
     .coupon-container {
         background-color: #1E293B;
         border-radius: 12px;
         padding: 20px;
-        margin-bottom: 25px;
+        margin-top: 20px;
         box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
         border: 1px solid #334155;
     }
     
-    /* BORDURES LATÉRALES SELON CATÉGORIE */
+    /* STYLE LISTE DES MATCHS */
+    .match-row {
+        background-color: #1E293B;
+        padding: 15px;
+        border-radius: 8px;
+        margin-bottom: 10px;
+        border-left: 4px solid #3B82F6;
+        transition: transform 0.2s;
+    }
+    .match-row:hover { transform: translateX(5px); background-color: #2D3748; }
+
+    /* BORDURES CATÉGORIES */
     .border-safe { border-left: 6px solid #22C55E; }   /* VERT */
     .border-psycho { border-left: 6px solid #A855F7; } /* VIOLET */
     .border-fun { border-left: 6px solid #F59E0B; }    /* ORANGE */
 
-    /* EN-TÊTE DU TICKET */
-    .ticket-head {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-start;
-        margin-bottom: 15px;
-        border-bottom: 1px solid #334155;
-        padding-bottom: 10px;
-    }
-    .match-name { font-size: 1.2rem; font-weight: 700; color: #fff; }
-    
     /* BADGES */
     .badge {
         display: inline-block;
@@ -63,15 +64,11 @@ st.markdown("""
         padding: 4px 8px;
         border-radius: 4px;
         text-transform: uppercase;
-        margin-top: 5px;
     }
     .badge-psy { background-color: #581C87; color: #D8B4FE; border: 1px solid #A855F7; }
     
-    /* JAUGE DE CONFIANCE */
-    .conf-box { text-align: right; min-width: 80px; }
-    .conf-label { font-size: 0.7rem; color: #94A3B8; }
-    .conf-val { font-weight: bold; color: #fff; font-size: 1.1rem; }
-    .progress-track { background: #334155; height: 6px; border-radius: 3px; margin-top: 4px; width: 100%; }
+    /* JAUGE CONFIANCE */
+    .progress-track { background: #334155; height: 6px; border-radius: 3px; margin-top: 5px; width: 100%; }
     .progress-bar { height: 100%; border-radius: 3px; background: linear-gradient(90deg, #22C55E, #4ADE80); }
 
     /* PARI PRINCIPAL */
@@ -87,47 +84,13 @@ st.markdown("""
         border: 1px dashed #374151;
     }
 
-    /* GRILLE DE STATS */
-    .stats-container {
-        display: flex;
-        gap: 10px;
-        margin-bottom: 15px;
-    }
-    .stat-card {
-        flex: 1;
-        background: #0F172A;
-        padding: 10px;
-        border-radius: 8px;
-        text-align: center;
-        border: 1px solid #334155;
-    }
-    .stat-title { font-size: 0.7em; color: #94A3B8; letter-spacing: 0.5px; text-transform: uppercase; }
-    .stat-data { font-size: 1.1em; font-weight: bold; color: #F8FAFC; margin-top: 2px; }
-
-    /* TEXTE ANALYSE */
-    .analysis-footer {
-        font-style: italic;
-        color: #CBD5E1;
-        font-size: 0.95em;
-        line-height: 1.5;
-        border-top: 1px solid #334155;
-        padding-top: 10px;
-    }
-
-    /* BOUTON GLOBAL */
+    /* BOUTON ANALYSE */
     .stButton>button {
-        width: 100%;
         background: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%);
-        border: none;
-        padding: 16px;
-        font-weight: bold;
-        color: white;
-        border-radius: 8px;
-        font-size: 1.1rem;
-        transition: all 0.2s;
-        box-shadow: 0 4px 6px rgba(37, 99, 235, 0.3);
+        color: white; border: none; font-weight: bold; border-radius: 8px;
+        width: 100%;
     }
-    .stButton>button:hover { transform: scale(1.01); background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%); }
+    .stButton>button:hover { background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%); }
     
     /* ANALYSE DÉTAILLÉE */
     .full-details {
@@ -142,117 +105,103 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 3. SIDEBAR (CONFIGURATIONS)
+# 3. SIDEBAR (CLÉS API)
 # ==========================================
 with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/2586/2586885.png", width=70)
     st.title("BettingGenius")
-    st.markdown("**Version Ultimate (V8)**")
+    st.markdown("**Version API (Automatique)**")
     st.markdown("---")
     
-    # 3.1 Gestion de la Clé API (Render vs Local)
-    api_key = os.environ.get("GOOGLE_API_KEY")
-    if not api_key:
-        api_key = st.text_input("🔑 Clé API Google Gemini", type="password")
-
-    # 3.2 Sélection du Modèle
-    st.markdown("### 🧬 Cerveau IA")
-    model_choice = st.selectbox(
-        "Version du modèle :", 
-        [
-            "gemini-1.5-flash",        # Recommandé (Stable)
-            "gemini-2.0-flash-exp",    # Rapide mais quotas stricts
-            "gemini-1.5-pro",          # Très intelligent
-            "gemini-2.5-flash",        # Nouvelle gen
-            "Autre (Manuel)"
-        ],
-        index=0
-    )
+    # 1. Clé Gemini
+    gemini_key = os.environ.get("GOOGLE_API_KEY")
+    if not gemini_key:
+        gemini_key = st.text_input("🔑 Clé Gemini AI", type="password")
     
-    if model_choice == "Autre (Manuel)":
-        model_version = st.text_input("Nom technique", "gemini-1.5-flash")
-    else:
-        model_version = model_choice
+    st.markdown("---")
     
-    st.success(f"Actif : **{model_version}**")
-    st.info("""
-    **Modules actifs :**
-    ✅ CloudScraper (Anti-Bot)
-    ✅ PsychoEngine™ (Mental)
-    ✅ Smart Coupons
-    ✅ Anti-Crash (Retry)
-    """)
+    # 2. Clé RapidAPI
+    rapid_key = st.text_input("🔑 Clé API-Football (RapidAPI)", type="password", help="Gratuit sur rapidapi.com (100 req/jour)")
+    
+    st.markdown("---")
+    
+    # 3. Modèle IA
+    model_version = st.selectbox("Modèle IA :", ["gemini-1.5-flash", "gemini-2.0-flash-exp", "gemini-1.5-pro"])
+    
+    st.info("✅ Connexion API Directe\n✅ PsychoEngine™ Actif\n✅ Design Ticket Actif")
 
 # ==========================================
-# 4. FONCTIONS CŒUR
+# 4. FONCTIONS API (MOTEUR DE DONNÉES)
 # ==========================================
 
-def get_besoccer_data(url):
-    """
-    Scrape BeSoccer en contournant les protections 403.
-    """
-    # Normalisation pour éviter les erreurs de langue
-    url = url.replace("www.besoccer.com", "fr.besoccer.com")
-    url = url.replace("/preview", "/avant-match")
-    url = url.replace("/analysis", "/analyse")
+def get_headers(api_key):
+    return {
+        "X-RapidAPI-Key": api_key,
+        "X-RapidAPI-Host": "api-football-v1.p.rapidapi.com"
+    }
+
+def get_fixtures(api_key, league_id, date_str):
+    """Récupère la liste des matchs"""
+    url = "https://api-football-v1.p.rapidapi.com/v3/fixtures"
+    # Saison 2024 (Changez en 2025 si besoin selon la période)
+    querystring = {"league": str(league_id), "season": "2024", "date": str(date_str)}
     
     try:
-        # Simulation d'un navigateur Chrome sur Windows
-        scraper = cloudscraper.create_scraper(browser={'browser': 'chrome','platform': 'windows','desktop': True})
-        response = scraper.get(url)
-        
-        if response.status_code == 200:
-            soup = BeautifulSoup(response.content, 'html.parser')
-            # Nettoyage brutal du code HTML inutile
-            for tag in soup(["script", "style", "nav", "footer", "iframe", "svg", "header", "form", "aside"]):
-                tag.extract()
-            
-            text = ' '.join(soup.get_text(separator=' ').split())
-            title = soup.find('title').text if soup.find('title') else "Match Inconnu"
-            
-            if len(text) < 500: return None # Page vide ou bloquée
-            return {"title": title, "content": text[:45000]} # Max context
+        response = requests.get(url, headers=get_headers(api_key), params=querystring)
+        return response.json().get('response', [])
+    except:
+        return []
+
+def get_match_predictions(api_key, fixture_id):
+    """
+    Récupère les PREDICTIONS calculées par l'API Football.
+    C'est une mine d'or pour l'IA (Forme, H2H, Probas, Comparaison).
+    """
+    url = "https://api-football-v1.p.rapidapi.com/v3/predictions"
+    querystring = {"fixture": str(fixture_id)}
+    
+    try:
+        response = requests.get(url, headers=get_headers(api_key), params=querystring)
+        data = response.json().get('response', [])
+        if data:
+            return json.dumps(data[0], indent=2) # On retourne tout le JSON brut
         return None
     except:
         return None
 
-def build_ultimate_prompt(match_data):
+def build_api_prompt(match_title, json_data):
     """
-    Le Prompt Complet intégrant les 9 points, la psycho et le JSON.
+    Le Prompt Ultimate adapté pour lire le JSON de l'API au lieu du texte.
     """
     return f"""
-    Tu es "BettingGenius", l'IA experte en paris sportifs.
+    Tu es "BettingGenius". Analyse ce match : {match_title}
     
-    ANALYSE LE MATCH : {match_data['title']}
-    DONNÉES : "{match_data['content']}"
-
-    --- PHASE 1 : ANALYSE DÉTAILLÉE (TEXTE) ---
-    Rédige une analyse structurée. Si info manquante, écris "❌ Non dispo".
-    1. **🏆 Prédiction** : Forme + Dynamique Mentale.
-    2. **🚩 Corners** : Stratégie & Stats.
-    3. **🔢 Score exact**.
-    4. **⚽ Total Buts**.
-    5. **⏱️ Périodes**.
-    6. **🏥 Absences**.
-    7. **🏟️ Conditions**.
-    8. **⚠️ Facteurs X**.
-    9. **🎲 Monte Carlo**.
-
-    --- PHASE 2 : CLASSIFICATION (JSON STRICT) ---
-    Génère ce JSON pour créer le ticket.
-    Catégories: "SAFE" (Confiance >80%), "PSYCHO" (Enjeu fort), "FUN".
+    DONNÉES TECHNIQUES (JSON API) :
+    {json_data}
+    
+    --- MISSION 1 : ANALYSE (9 POINTS & PSYCHO) ---
+    Utilise les données fournies (Forme, H2H, Attaque/Défense, Comparaison) pour rédiger l'analyse.
+    1. **🏆 Prédiction** (Logique vs Surprise).
+    2. **🧠 Facteur Psycho** (Enjeu, Série de victoires/défaites, Domicile/Extérieur).
+    3. **🚩 Corners & Buts** (Stats off/def).
+    4. **🔢 Score Exact**.
+    5. **⚠️ Facteurs Risques**.
+    
+    --- MISSION 2 : TICKET JSON ---
+    Génère le JSON final pour l'affichage.
+    Catégories: "SAFE" (>75% proba API), "PSYCHO" (Enjeu fort), "FUN".
 
     ```json
     {{
-        "match": "{match_data['title']}",
-        "pari_principal": "Ex: Victoire Real Madrid",
-        "score_exact": "Ex: 3-1",
+        "match": "{match_title}",
+        "pari_principal": "Ex: Victoire Manchester",
+        "score_exact": "Ex: 2-1",
         "corners": "Ex: +9.5",
-        "total_buts": "Ex: +3.5",
-        "confiance": 85,
-        "categorie": "SAFE", 
-        "facteur_psycho": "Ex: COURSE AU TITRE / MAINTIEN / DERBY",
-        "analyse_courte": "Résumé d'une phrase."
+        "total_buts": "Ex: +2.5",
+        "confiance": 80,
+        "categorie": "SAFE",
+        "facteur_psycho": "Ex: FORME DOMICILE / CHOC AU SOMMET",
+        "analyse_courte": "Résumé court."
     }}
     ```
     """
@@ -260,167 +209,155 @@ def build_ultimate_prompt(match_data):
 # ==========================================
 # 5. INTERFACE PRINCIPALE
 # ==========================================
-st.title("🧠 BettingGenius Ultimate")
-st.markdown("#### L'outil d'analyse le plus complet. Collez vos liens ci-dessous.")
 
-urls_input = st.text_area("🔗 Liens BeSoccer (Un par ligne)", height=120, placeholder="https://fr.besoccer.com/match/...")
+st.title("⚡ BettingGenius API")
+st.markdown("Sélectionnez une ligue et une date. Plus besoin de liens !")
 
-if "results" not in st.session_state: st.session_state.results = []
+# Initialisation Session State
+if 'selected_match_id' not in st.session_state: st.session_state.selected_match_id = None
+if 'analysis_result' not in st.session_state: st.session_state.analysis_result = None
 
-# --- BOUTON DE LANCEMENT ---
-if st.button("LANCER L'ANALYSE COMPLÈTE 🚀"):
-    if not api_key or not urls_input:
-        st.warning("⛔ Clé API ou Liens manquants.")
-    else:
-        urls = [url.strip() for url in urls_input.split('\n') if url.strip()]
-        st.session_state.results = []
-        
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        
-        # Init IA
-        genai.configure(api_key=api_key)
-        try:
-            model = genai.GenerativeModel(model_version)
-        except:
-            st.error(f"❌ Modèle '{model_version}' invalide. Changez-le dans la barre latérale.")
-            st.stop()
-        
-        # BOUCLE D'ANALYSE
-        for i, url in enumerate(urls):
-            status_text.markdown(f"**⏳ Match {i+1}/{len(urls)} : Analyse en cours...**")
-            
-            # Pause respectueuse
-            time.sleep(2)
-            
-            data = get_besoccer_data(url)
-            
-            if data:
-                # Retry Logic (3 essais)
-                for attempt in range(3):
-                    try:
-                        res = model.generate_content(build_ultimate_prompt(data))
-                        txt = res.text
-                        
-                        # Parsing JSON
-                        j_match = re.search(r'\{.*\}', txt, re.DOTALL)
-                        j_data = {}
-                        if j_match:
-                            clean = re.sub(r'//.*', '', j_match.group(0))
-                            try: j_data = json.loads(clean)
-                            except: j_data = {"match": data['title'], "pari_principal": "Erreur", "categorie": "FUN"}
-                            if "match" not in j_data: j_data["match"] = data["title"]
-                        
-                        clean_txt = re.sub(r'```json.*```', '', txt, flags=re.DOTALL)
-                        
-                        st.session_state.results.append({
-                            "json": j_data,
-                            "text": clean_txt,
-                            "title": data['title']
-                        })
-                        break # Succès
-                    except Exception as e:
-                        err = str(e)
-                        if "429" in err: # Quota
-                            status_text.warning("⚠️ Quota atteint. Pause de 20s...")
-                            time.sleep(20)
-                        elif "404" in err: # Modèle pas trouvé
-                            st.error("❌ Modèle indisponible. Passez sur 'gemini-1.5-flash'.")
-                            break
-                        else:
-                            break # Autre erreur
-            else:
-                st.error(f"Lien bloqué : {url}")
-            
-            progress_bar.progress((i + 1) / len(urls))
-        
-        status_text.empty()
-        st.success("✅ Analyse terminée !")
-
-# ==========================================
-# 6. AFFICHAGE DES RÉSULTATS (TICKETS)
-# ==========================================
-
-def render_ticket(item, border_class, badge_class):
-    """
-    Génère le HTML du ticket proprement pour éviter les erreurs JS.
-    """
-    j = item['json']
-    conf = j.get('confiance', 50)
+if not rapid_key or not gemini_key:
+    st.warning("⚠️ Veuillez entrer vos Clés API dans la barre latérale.")
+else:
+    # --- FILTRES ---
+    col1, col2, col3 = st.columns([2, 2, 1])
+    with col1:
+        # ID des Ligues Majeures (API-Football IDs)
+        leagues = {
+            "Premier League 🏴󠁧󠁢󠁥󠁮󠁧󠁿": 39,
+            "La Liga 🇪🇸": 140,
+            "Bundesliga 🇩🇪": 78,
+            "Serie A 🇮🇹": 135,
+            "Ligue 1 🇫🇷": 61,
+            "Champions League 🇪🇺": 2,
+            "Europa League 🇪🇺": 3
+        }
+        league_choice = st.selectbox("Championnat", list(leagues.keys()))
+        league_id = leagues[league_choice]
     
-    html = f"""
-    <div class="coupon-container {border_class}">
-        <!-- EN-TETE -->
-        <div class="ticket-head">
-            <div>
-                <div class="match-name">{j.get('match')}</div>
-                <span class="badge {badge_class}">{j.get('facteur_psycho', 'ANALYSE')}</span>
-            </div>
-            <div class="conf-box">
-                <div class="conf-label">CONFIANCE</div>
-                <div class="conf-val">{conf}%</div>
-                <div class="progress-track">
-                    <div class="progress-bar" style="width: {conf}%;"></div>
+    with col2:
+        date_choice = st.date_input("Date", date.today())
+        
+    with col3:
+        st.write("")
+        st.write("")
+        if st.button("🔍 CHERCHER"):
+            with st.spinner("Récupération des matchs..."):
+                st.session_state.matches = get_fixtures(rapid_key, league_id, date_choice)
+                st.session_state.analysis_result = None # Reset analyse précédente
+
+    # --- LISTE DES MATCHS ---
+    if 'matches' in st.session_state and st.session_state.matches:
+        st.markdown(f"### {len(st.session_state.matches)} Matchs trouvés")
+        
+        for m in st.session_state.matches:
+            home = m['teams']['home']['name']
+            away = m['teams']['away']['name']
+            fid = m['fixture']['id']
+            status = m['fixture']['status']['short']
+            time_match = m['fixture']['date'][11:16]
+            
+            # Affichage en ligne propre
+            col_a, col_b, col_c = st.columns([0.2, 0.6, 0.2])
+            with col_a:
+                st.markdown(f"**{time_match}**")
+            with col_b:
+                st.markdown(f"⚽ **{home}** vs **{away}**")
+            with col_c:
+                # BOUTON D'ANALYSE PAR MATCH
+                if st.button("Analyser 🧠", key=fid):
+                    st.session_state.selected_match_id = fid
+                    
+                    with st.spinner(f"Analyse approfondie de {home} vs {away}..."):
+                        # 1. Appel API-Football (Détails)
+                        stats_json = get_match_predictions(rapid_key, fid)
+                        
+                        if stats_json:
+                            # 2. Appel Gemini
+                            genai.configure(api_key=gemini_key)
+                            model = genai.GenerativeModel(model_version)
+                            
+                            try:
+                                prompt = build_api_prompt(f"{home} vs {away}", stats_json)
+                                response = model.generate_content(prompt)
+                                full_text = response.text
+                                
+                                # Parsing
+                                j_data = {}
+                                j_match = re.search(r'\{.*\}', full_text, re.DOTALL)
+                                if j_match:
+                                    clean = re.sub(r'//.*', '', j_match.group(0))
+                                    try: j_data = json.loads(clean)
+                                    except: j_data = {"match": f"{home}-{away}", "pari_principal": "Erreur", "categorie": "FUN"}
+                                
+                                clean_text = re.sub(r'```json.*```', '', full_text, flags=re.DOTALL)
+                                
+                                # Stockage résultat
+                                st.session_state.analysis_result = {
+                                    "json": j_data,
+                                    "text": clean_text
+                                }
+                            except Exception as e:
+                                st.error(f"Erreur IA : {e}")
+                        else:
+                            st.error("Pas de données détaillées disponibles pour ce match (Trop tôt ou Ligue mineure).")
+
+    # --- AFFICHAGE DU RÉSULTAT (TICKET) ---
+    if st.session_state.analysis_result:
+        res = st.session_state.analysis_result
+        j = res['json']
+        
+        st.markdown("---")
+        st.subheader("🎟️ RÉSULTAT DE L'ANALYSE")
+        
+        # Détermination couleur
+        cat = j.get('categorie', 'FUN')
+        border_cls = "border-safe" if cat == "SAFE" else "border-psycho" if cat == "PSYCHO" else "border-fun"
+        
+        # HTML TICKET (Stable)
+        html = f"""
+        <div class="coupon-container {border_cls}">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:15px; border-bottom:1px solid #334155; padding-bottom:10px;">
+                <div>
+                    <div style="font-size:1.2rem; font-weight:700; color:#fff;">{j.get('match')}</div>
+                    <span class="badge badge-psy" style="margin-top:5px;">{j.get('facteur_psycho', 'ANALYSE')}</span>
+                </div>
+                <div style="text-align:right;">
+                    <div style="font-size:0.7rem; color:#94A3B8;">CONFIANCE</div>
+                    <div style="font-weight:bold; color:#fff; font-size:1.1rem;">{j.get('confiance')}%</div>
+                    <div class="progress-track">
+                        <div class="progress-bar" style="width: {j.get('confiance')}%;"></div>
+                    </div>
                 </div>
             </div>
-        </div>
 
-        <!-- PRONOSTIC -->
-        <div class="main-bet-box">
-            🏆 {j.get('pari_principal')}
-        </div>
-
-        <!-- STATS -->
-        <div class="stats-container">
-            <div class="stat-card">
-                <div class="stat-title">SCORE</div>
-                <div class="stat-data">{j.get('score_exact', '-')}</div>
+            <div class="main-bet-box">
+                🏆 {j.get('pari_principal')}
             </div>
-            <div class="stat-card">
-                <div class="stat-title">BUTS</div>
-                <div class="stat-data">{j.get('total_buts', '-')}</div>
+
+            <div style="display:flex; gap:10px; margin-bottom:15px;">
+                <div style="flex:1; background:#0F172A; padding:10px; border-radius:8px; text-align:center; border:1px solid #334155;">
+                    <div style="font-size:0.7em; color:#94A3B8;">SCORE</div>
+                    <div style="font-size:1.1em; font-weight:bold; color:#F8FAFC;">{j.get('score_exact', '-')}</div>
+                </div>
+                <div style="flex:1; background:#0F172A; padding:10px; border-radius:8px; text-align:center; border:1px solid #334155;">
+                    <div style="font-size:0.7em; color:#94A3B8;">BUTS</div>
+                    <div style="font-size:1.1em; font-weight:bold; color:#F8FAFC;">{j.get('total_buts', '-')}</div>
+                </div>
+                <div style="flex:1; background:#0F172A; padding:10px; border-radius:8px; text-align:center; border:1px solid #334155;">
+                    <div style="font-size:0.7em; color:#94A3B8;">CORNERS</div>
+                    <div style="font-size:1.1em; font-weight:bold; color:#F8FAFC;">{j.get('corners', '-')}</div>
+                </div>
             </div>
-            <div class="stat-card">
-                <div class="stat-title">CORNERS</div>
-                <div class="stat-data">{j.get('corners', '-')}</div>
+
+            <div style="font-style:italic; color:#CBD5E1; font-size:0.95em; border-top:1px solid #334155; padding-top:10px;">
+                "{j.get('analyse_courte')}"
             </div>
         </div>
-
-        <!-- FOOTER -->
-        <div class="analysis-footer">
-            "{j.get('analyse_courte')}"
-        </div>
-    </div>
-    """
-    st.markdown(html, unsafe_allow_html=True)
-
-if st.session_state.results:
-    st.markdown("---")
-    
-    # Filtrage
-    safes = [r for r in st.session_state.results if r['json'].get('categorie') == 'SAFE']
-    psychos = [r for r in st.session_state.results if r['json'].get('categorie') == 'PSYCHO']
-    funs = [r for r in st.session_state.results if r['json'].get('categorie') == 'FUN']
-
-    t1, t2, t3 = st.tabs(["🛡️ BLINDÉ", "🧠 TACTIQUE", "💣 FUN"])
-
-    with t1:
-        if safes:
-            for item in safes: render_ticket(item, "border-safe", "bg-green")
-        else: st.info("Aucun match 100% sûr détecté.")
-
-    with t2:
-        if psychos:
-            for item in psychos: render_ticket(item, "border-psycho", "badge-psy")
-        else: st.info("Aucun enjeu critique détecté.")
-
-    with t3:
-        if funs:
-            for item in funs: render_ticket(item, "border-fun", "badge-psy")
-        else: st.write("Aucun match Fun.")
-
-    st.markdown("---")
-    st.subheader("📝 DÉTAILS COMPLETS (9 POINTS)")
-    for item in st.session_state.results:
-        with st.expander(f"🔎 {item['title']}"):
-            st.markdown(f'<div class="full-details">{item["text"]}</div>', unsafe_allow_html=True)
+        """
+        st.markdown(html, unsafe_allow_html=True)
+        
+        # Détails Texte
+        with st.expander("📝 Lire l'analyse complète (9 Points)"):
+            st.markdown(f'<div class="full-details">{res["text"]}</div>', unsafe_allow_html=True)
