@@ -4,178 +4,206 @@ import requests
 import json
 import re
 import os
-from datetime import date
+from datetime import datetime
 
-# ==========================================
-# 1. CONFIGURATION
-# ==========================================
-st.set_page_config(page_title="BettingGenius Debug", page_icon="🛠️", layout="wide")
+# --- 1. CONFIGURATION ---
+st.set_page_config(page_title="BettingGenius - Football Data", page_icon="⚽", layout="wide")
 
 st.markdown("""
 <style>
-    .stApp { background-color: #0F172A; color: #E2E8F0; }
-    .status-box { padding: 10px; border-radius: 5px; margin-bottom: 10px; border: 1px solid #334155; }
-    .error-box { background-color: #450a0a; color: #fca5a5; padding: 15px; border-radius: 8px; border: 1px solid #f87171; }
-    .success-box { background-color: #064e3b; color: #6ee7b7; padding: 15px; border-radius: 8px; border: 1px solid #34d399; }
-    .match-box { background: #1E293B; padding: 15px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid #3B82F6; display: flex; justify-content: space-between; align-items: center; }
-    .stButton>button { width: 100%; background: #3B82F6; color: white; font-weight: bold; border-radius: 8px; height: 50px; border: none; }
+    .stApp { background-color: #0b0f19; color: #e0e6ed; }
+    .coupon-card { background: #161b26; padding: 20px; border-radius: 12px; border: 1px solid #2d3748; margin-bottom: 15px; }
+    .stButton>button { width: 100%; background: #00D26A; color: white; border: none; padding: 15px; font-weight: bold; border-radius: 8px; }
+    .badge-conf { background-color: #064e3b; color: #6ee7b7; padding: 4px 8px; border-radius: 4px; font-size: 0.8em; }
 </style>
 """, unsafe_allow_html=True)
 
-# ==========================================
-# 2. SIDEBAR & CLÉS
-# ==========================================
+# --- 2. SIDEBAR & CLÉS ---
 with st.sidebar:
-    st.title("🛠️ BettingGenius")
-    st.caption("Mode Diagnostic & Réparation")
+    st.title("⚽ BettingGenius FD")
+    st.markdown("Source : **Football-Data.org**")
     
-    # TA CLÉ RAPIDAPI (Celle que tu as fournie)
-    # Si elle ne marche pas, c'est qu'elle a atteint son quota ou est désactivée.
-    default_rapid_key = "f3ab5bacccmshb976c3672642272p11e8e8jsn6fd372d8e64b"
+    # 1. Clé Google Gemini
+    api_key_gemini = os.environ.get("GOOGLE_API_KEY")
+    if not api_key_gemini:
+        api_key_gemini = st.text_input("Clé Gemini (Google AI)", type="password")
     
-    rapid_key = st.text_input("Clé API-Football", value=default_rapid_key, type="password")
-    gemini_key = st.text_input("Clé Gemini AI", type="password")
+    # 2. Clé Football-Data.org
+    api_key_foot = os.environ.get("FOOTBALL_DATA_KEY")
+    if not api_key_foot:
+        api_key_foot = st.text_input("Clé Football-Data.org (Token)", type="password", help="Reçue par mail après inscription")
+
+# --- 3. FONCTIONS API (Football-Data.org) ---
+
+def get_football_data(endpoint, api_key):
+    """Appel générique à l'API Football-Data.org"""
+    url = f"https://api.football-data.org/v4/{endpoint}"
+    headers = { "X-Auth-Token": api_key }
+    try:
+        response = requests.get(url, headers=headers)
+        if response.status_code == 200:
+            return response.json()
+        elif response.status_code == 429:
+            return "LIMIT" # Trop de requêtes
+        else:
+            return None
+    except:
+        return None
+
+def get_team_analysis_data(team_name, api_key):
+    """
+    Récupère les infos via Football-Data.org
+    Attention : Le plan gratuit limite aux grandes ligues.
+    """
+    summary = ""
     
-    # BOUTON TEST DIAGNOSTIC
-    if st.button("🔴 TESTER MA CLÉ API"):
-        url = "https://api-football-v1.p.rapidapi.com/v3/status"
-        headers = {
-            "X-RapidAPI-Key": rapid_key,
-            "X-RapidAPI-Host": "api-football-v1.p.rapidapi.com"
-        }
+    # A. Recherche de l'ID de l'équipe
+    # L'API ne permet pas une recherche directe facile en free tier parfois, 
+    # mais on peut chercher dans les compétitions. Ici on tente le endpoint 'teams'.
+    # Si ça échoue, on demandera à l'utilisateur d'être précis.
+    
+    # Note : Cette API est stricte sur les noms (ex: "Real Madrid CF" au lieu de "Real").
+    # On va faire une recherche large si possible.
+    
+    # Pour simplifier en Free Tier, on va scanner les matchs à venir d'une compétition majeure
+    # Ou utiliser le endpoint 'matches' générique.
+    
+    # 1. Chercher les matchs à venir qui contiennent le nom de l'équipe
+    matches_data = get_football_data("matches", api_key)
+    
+    if matches_data == "LIMIT":
+        return None, "⚠️ Limite d'API atteinte. Attendez 1 minute."
+    if not matches_data or 'matches' not in matches_data:
+        return None, "Erreur de connexion API ou Clé invalide."
+
+    target_match = None
+    
+    # On cherche un match où l'équipe joue (Home ou Away) dans les 10 prochains jours
+    # (L'endpoint /matches par défaut donne les matchs du jour ou proches)
+    for m in matches_data['matches']:
+        home = m['homeTeam']['name'].lower()
+        away = m['awayTeam']['name'].lower()
+        search = team_name.lower()
+        
+        if search in home or search in away:
+            target_match = m
+            break
+            
+    if not target_match:
+        return None, f"Aucun match trouvé prochainement pour '{team_name}' (ou équipe mal orthographiée)."
+    
+    # B. Extraction des données du match trouvé
+    home_team = target_match['homeTeam']['name']
+    away_team = target_match['awayTeam']['name']
+    date = target_match['utcDate']
+    competition = target_match['competition']['name']
+    
+    match_title = f"{home_team} vs {away_team}"
+    summary += f"MATCH : {match_title}\n"
+    summary += f"Compétition : {competition} | Date : {date}\n\n"
+    
+    # C. Récupération du Classement (Standings)
+    # On a besoin de l'ID de la compétition
+    comp_code = target_match['competition']['code'] # ex: PL, PD, CL
+    standings = get_football_data(f"competitions/{comp_code}/standings", api_key)
+    
+    if standings and 'standings' in standings:
         try:
-            r = requests.get(url, headers=headers)
-            data = r.json()
-            if "errors" in data and data["errors"]:
-                st.error(f"ERREUR CLÉ : {data['errors']}")
-            else:
-                account = data.get('response', {}).get('account', {})
-                st.success(f"✅ Clé Valide ! Prénom: {account.get('firstname')}")
-                st.info(f"Quota utilisé : {data.get('response', {}).get('requests', {}).get('current', 0)} / {data.get('response', {}).get('requests', {}).get('limit_day', 100)}")
-        except Exception as e:
-            st.error(f"Erreur connexion : {e}")
-
-# ==========================================
-# 3. LOGIQUE ROBUSTE
-# ==========================================
-
-def get_season(selected_date):
-    year = selected_date.year
-    month = selected_date.month
-    # Pour la Premier League et championnats majeurs :
-    # Si on est en Aout-Decembre 2025, c'est la saison 2025.
-    # Si on est en Janvier-Mai 2026, c'est la saison 2025.
-    if month >= 7: return year
-    return year - 1
-
-def get_fixtures_debug(api_key, league_id, date_obj):
-    url = "https://api-football-v1.p.rapidapi.com/v3/fixtures"
-    season = get_season(date_obj)
-    
-    headers = {
-        "X-RapidAPI-Key": api_key,
-        "X-RapidAPI-Host": "api-football-v1.p.rapidapi.com"
-    }
-    querystring = {"league": str(league_id), "season": str(season), "date": str(date_obj)}
-    
-    try:
-        response = requests.get(url, headers=headers, params=querystring)
-        data = response.json()
-        
-        # 1. Vérification d'erreurs explicites de l'API
-        if "message" in data:
-            st.error(f"🛑 Message API : {data['message']}")
-            return []
+            table = standings['standings'][0]['table']
+            home_stats = next((t for t in table if t['team']['id'] == target_match['homeTeam']['id']), None)
+            away_stats = next((t for t in table if t['team']['id'] == target_match['awayTeam']['id']), None)
             
-        if "errors" in data and data["errors"]:
-            # L'API renvoie souvent un objet vide [] ou un message si erreur
-            st.markdown(f"""
-            <div class="error-box">
-                <strong>L'API a refusé la connexion :</strong><br>
-                {data['errors']}
-            </div>
-            """, unsafe_allow_html=True)
-            return []
-        
-        # 2. Vérification des résultats
-        results = data.get('results', 0)
-        if results == 0:
-            st.warning(f"⚠️ L'API a répondu 'OK' (Code 200) mais a trouvé 0 matchs.")
-            st.write(f"🔎 Détails requête : Ligue ID {league_id} | Saison {season} | Date {date_obj}")
-            st.info("💡 Conseil : Essayez une date où vous êtes sûr qu'il y a match (ex: un Samedi).")
-            return []
+            if home_stats:
+                summary += f"--- {home_team} (Domicile) ---\n"
+                summary += f"Classement: {home_stats['position']}ème | Points: {home_stats['points']}\n"
+                summary += f"Buts: {home_stats['goalsFor']} Pour / {home_stats['goalsAgainst']} Contre\n"
+                summary += f"Forme (Derniers 5): {home_stats.get('form', 'N/A')}\n\n" # La forme est une string genre "W,L,D,W,W"
             
-        return data.get('response', [])
-        
-    except Exception as e:
-        st.error(f"Crash Technique : {e}")
-        return []
+            if away_stats:
+                summary += f"--- {away_team} (Extérieur) ---\n"
+                summary += f"Classement: {away_stats['position']}ème | Points: {away_stats['points']}\n"
+                summary += f"Buts: {away_stats['goalsFor']} Pour / {away_stats['goalsAgainst']} Contre\n"
+                summary += f"Forme (Derniers 5): {away_stats.get('form', 'N/A')}\n"
+        except:
+            summary += "Données de classement partiel.\n"
 
-def get_predictions(api_key, fixture_id):
-    url = "https://api-football-v1.p.rapidapi.com/v3/predictions"
-    headers = {"X-RapidAPI-Key": api_key, "X-RapidAPI-Host": "api-football-v1.p.rapidapi.com"}
-    try:
-        r = requests.get(url, headers=headers, params={"fixture": fixture_id})
-        return json.dumps(r.json()['response'][0], indent=2)
-    except: return None
+    return match_title, summary
 
-def build_prompt(match, stats):
+def build_api_prompt(title, data):
     return f"""
-    Analyse ce match : {match}. 
-    Données API : {stats}
+    Tu es "BettingGenius". Analyse ce match avec les données API fournies.
     
-    Fais un pronostic JSON STRICT :
-    ```json
-    {{ "match": "{match}", "pari_principal": "X", "score_exact": "X-X", "confiance": 80, "categorie": "SAFE", "analyse_courte": "..." }}
-    ```
+    MATCH : {title}
+    DONNÉES : 
+    {data}
+    
+    --- TACHE ---
+    1. Analyse la FORME (Regarde la ligne 'Forme': W=Win, L=Loss, D=Draw). C'est crucial.
+    2. Compare les Buts Pour/Contre pour estimer le potentiel offensif.
+    3. Donne un pronostic JSON.
+    
+    Format JSON attendu :
+    {{
+        "match": "{title}",
+        "pari_principal": "...",
+        "score_exact": "...",
+        "confiance": 80,
+        "categorie": "SAFE/FUN",
+        "analyse_courte": "..."
+    }}
     """
 
-# ==========================================
-# 4. INTERFACE
-# ==========================================
-st.title("⚡ BettingGenius - Réparation")
+# --- 4. INTERFACE ---
 
-if not gemini_key:
-    st.warning("⚠️ Clé Gemini manquante.")
-else:
-    c1, c2, c3 = st.columns([2, 2, 1])
-    with c1:
-        leagues = {
-            "Premier League": 39, "La Liga": 140, "Bundesliga": 78, "Serie A": 135, "Ligue 1": 61,
-            "Champions League": 2, "Saudi Pro League": 307
-        }
-        l_choice = st.selectbox("Championnat", list(leagues.keys()))
-        l_id = leagues[l_choice]
-    with c2:
-        d_choice = st.date_input("Date", date.today())
-    with c3:
-        st.write("")
-        st.write("")
-        btn = st.button("CHERCHER")
+st.title("⚽ BettingGenius - Data Directe")
+st.caption("Utilise l'API Football-Data.org (Gratuite pour les grandes ligues)")
 
-    if btn:
-        with st.spinner("Interrogation de l'API..."):
-            matches = get_fixtures_debug(rapid_key, l_id, d_choice)
-            st.session_state.matches = matches
+team_input = st.text_input("Nom de l'équipe (ex: Man City, Real Madrid, Bayern)", placeholder="Tapez le nom...")
 
-    if 'matches' in st.session_state and st.session_state.matches:
-        st.success(f"✅ {len(st.session_state.matches)} matchs trouvés !")
-        for m in st.session_state.matches:
-            home = m['teams']['home']['name']
-            away = m['teams']['away']['name']
-            fid = m['fixture']['id']
-            time_m = m['fixture']['date'][11:16]
+if st.button("ANALYSER CE MATCH 🚀"):
+    if not api_key_gemini or not api_key_foot:
+        st.error("⚠️ Veuillez entrer les 2 clés API dans la barre latérale.")
+    elif not team_input:
+        st.warning("⚠️ Entrez un nom d'équipe.")
+    else:
+        with st.spinner("🌍 Connexion à Football-Data.org..."):
+            match_title, data_text = get_team_analysis_data(team_input, api_key_foot)
             
-            col_a, col_b = st.columns([4, 1])
-            with col_a:
-                st.markdown(f'<div class="match-box"><b>{time_m}</b> {home} vs {away}</div>', unsafe_allow_html=True)
-            with col_b:
-                if st.button("Analyser", key=fid):
-                    genai.configure(api_key=gemini_key)
+            if not match_title:
+                st.error(f"Erreur : {data_text}")
+                st.info("Note : Le plan gratuit ne couvre que les ligues majeures (PL, Liga, Bundesliga, Serie A, L1, UCL).")
+            else:
+                st.success(f"Match Trouvé : {match_title}")
+                with st.expander("Voir les données brutes"):
+                    st.text(data_text)
+                
+                # IA
+                with st.spinner("🧠 Analyse de la forme en cours..."):
+                    genai.configure(api_key=api_key_gemini)
                     model = genai.GenerativeModel("gemini-1.5-flash")
-                    stats = get_predictions(rapid_key, fid)
-                    if stats:
-                        res = model.generate_content(build_prompt(f"{home}-{away}", stats))
-                        st.code(res.text, language="json")
-                    else:
-                        st.error("Pas de stats API.")
+                    response = model.generate_content(build_api_prompt(match_title, data_text))
+                    text = response.text
+                    
+                    # Extraction JSON
+                    json_match = re.search(r'\{.*\}', text, re.DOTALL)
+                    if json_match:
+                        try:
+                            clean_json = re.sub(r'//.*', '', json_match.group(0))
+                            j = json.loads(clean_json)
+                            
+                            st.markdown(f"""
+                            <div class="coupon-card">
+                                <h3>{j.get('match')}</h3>
+                                <h2 style="color:#00D26A;">👉 {j.get('pari_principal')}</h2>
+                                <span class="badge-conf">Confiance {j.get('confiance')}%</span>
+                                <p style="margin-top:10px;"><em>"{j.get('analyse_courte')}"</em></p>
+                                <hr>
+                                <p>Score estimé : {j.get('score_exact')}</p>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        except:
+                            st.write("Erreur d'affichage.")
+                    
+                    st.markdown("#### Détails")
+                    clean = re.sub(r'```json.*```', '', text, flags=re.DOTALL)
+                    st.markdown(clean)
